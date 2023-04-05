@@ -125,9 +125,11 @@ class DDPM(pl.LightningModule):
         self.loss_type = loss_type
 
         self.learn_logvar = learn_logvar
-        self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
+        logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
         if self.learn_logvar:
-            self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+            self.register_parameter('logvar', nn.Parameter(logvar, requires_grad=True))
+        else:
+            self.register_buffer('logvar', logvar)
 
         self.ucg_training = ucg_training or dict()
         if self.ucg_training:
@@ -1310,8 +1312,12 @@ class LatentDiffusion(DDPM):
 class DiffusionWrapper(pl.LightningModule):
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
-        self.sequential_cross_attn = diff_model_config.pop("sequential_crossattn", False)
-        self.diffusion_model = instantiate_from_config(diff_model_config)
+        if isinstance(diff_model_config, dict):
+            self.sequential_cross_attn = diff_model_config.pop("sequential_crossattn", False)
+            self.diffusion_model = instantiate_from_config(diff_model_config)
+        else:
+            self.sequential_cross_attn = getattr(diff_model_config, "sequential_crossattn", False)
+            self.diffusion_model = diff_model_config
         self.conditioning_key = conditioning_key
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm', 'hybrid-adm', 'crossattn-adm']
 
