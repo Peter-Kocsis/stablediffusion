@@ -1716,23 +1716,28 @@ class LatentDepth2ImageDiffusion(LatentFinetuneDiffusion):
             if bs is not None:
                 cc = cc[:bs]
                 cc = cc.to(self.device)
-            cc = self.depth_model(cc)
-            cc = torch.nn.functional.interpolate(
-                cc,
-                size=z.shape[2:],
-                mode="bicubic",
-                align_corners=False,
-            )
-
-            depth_min, depth_max = torch.amin(cc, dim=[1, 2, 3], keepdim=True), torch.amax(cc, dim=[1, 2, 3],
-                                                                                           keepdim=True)
-            cc = 2. * (cc - depth_min) / (depth_max - depth_min + 0.001) - 1.
+            cc = self.get_depth_conditioning(cc, z.shape[2:])
             c_cat.append(cc)
         c_cat = torch.cat(c_cat, dim=1)
         all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
         if return_first_stage_outputs:
             return z, all_conds, x, xrec, xc
         return z, all_conds
+
+    @torch.no_grad()
+    def get_depth_conditioning(self, cc, shape):
+        cc = self.depth_model(cc)
+        cc = torch.nn.functional.interpolate(
+            cc,
+            size=shape,
+            mode="bicubic",
+            align_corners=False,
+        )
+
+        depth_min, depth_max = torch.amin(cc, dim=[1, 2, 3], keepdim=True), torch.amax(cc, dim=[1, 2, 3],
+                                                                                       keepdim=True)
+        cc = 2. * (cc - depth_min) / (depth_max - depth_min + 0.001) - 1.
+        return cc
 
     @torch.no_grad()
     def log_images(self, *args, **kwargs):
