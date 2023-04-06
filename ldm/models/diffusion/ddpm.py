@@ -1708,21 +1708,23 @@ class LatentDepth2ImageDiffusion(LatentFinetuneDiffusion):
         z, c, x, xrec, xc = super().get_input(batch, self.first_stage_key, return_first_stage_outputs=True,
                                               force_c_encode=True, return_original_cond=True, bs=bs)
 
-        assert exists(self.concat_keys)
-        assert len(self.concat_keys) == 1
-        c_cat = list()
-        for ck in self.concat_keys:
-            cc = batch[ck]
-            if bs is not None:
-                cc = cc[:bs]
-                cc = cc.to(self.device)
-            cc = self.get_depth_conditioning(cc, z.shape[2:])
-            c_cat.append(cc)
-        c_cat = torch.cat(c_cat, dim=1)
+        c_cat = self.get_cat_conditioning(batch, z.shape[2:])
         all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
         if return_first_stage_outputs:
             return z, all_conds, x, xrec, xc
         return z, all_conds
+
+    @torch.no_grad()
+    def get_cat_conditioning(self, batch, shape):
+        assert exists(self.concat_keys)
+        # assert len(self.concat_keys) == 1
+        c_cat = list()
+        for ck in self.concat_keys:
+            cc = batch[ck]
+            cc = self.get_depth_conditioning(cc, shape)
+            c_cat.append(cc)
+        c_cat = torch.cat(c_cat, dim=1)
+        return c_cat
 
     @torch.no_grad()
     def get_depth_conditioning(self, cc, shape):
