@@ -1709,7 +1709,8 @@ class LatentDepth2ImageDiffusion(LatentFinetuneDiffusion):
                                               force_c_encode=True, return_original_cond=True, bs=bs)
 
         c_cat = self.get_cat_conditioning(batch, z.shape[2:])
-        all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
+        all_conds = {"c_concat": [c_cat], "c_crossattn": [rearrange(c_cat, 'b c h w -> b (h w) c')]}
+        # all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
         if return_first_stage_outputs:
             return z, all_conds, x, xrec, xc
         return z, all_conds
