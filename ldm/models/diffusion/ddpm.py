@@ -773,6 +773,20 @@ class LatentDiffusion(DDPM):
         encoder_posterior = self.encode_first_stage(x)
         z = self.get_first_stage_encoding(encoder_posterior).detach()
 
+        c, xc = self.get_cond_input(batch=batch, x=x, cond_key=cond_key, force_c_encode=force_c_encode, bs=bs)
+
+        out = [z, c]
+        if return_first_stage_outputs:
+            xrec = self.decode_first_stage(z)
+            out.extend([x, xrec])
+        if return_x:
+            out.extend([x])
+        if return_original_cond:
+            out.append(xc)
+        return out
+
+    @torch.no_grad()
+    def get_cond_input(self, batch, x=None, cond_key=None, force_c_encode=False, bs=None):
         if self.model.conditioning_key is not None and not self.force_null_conditioning:
             if cond_key is None:
                 cond_key = self.cond_stage_key
@@ -806,15 +820,8 @@ class LatentDiffusion(DDPM):
             if self.use_positional_encodings:
                 pos_x, pos_y = self.compute_latent_shifts(batch)
                 c = {'pos_x': pos_x, 'pos_y': pos_y}
-        out = [z, c]
-        if return_first_stage_outputs:
-            xrec = self.decode_first_stage(z)
-            out.extend([x, xrec])
-        if return_x:
-            out.extend([x])
-        if return_original_cond:
-            out.append(xc)
-        return out
+        return c, xc
+
 
     @torch.no_grad()
     def decode_first_stage(self, z, predict_cids=False, force_not_quantize=False):
@@ -1528,7 +1535,7 @@ class LatentFinetuneDiffusion(LatentDiffusion):
         if exists(ckpt_path):
             self.init_from_ckpt(ckpt_path, ignore_keys)
 
-    def init_from_ckpt(self, path, ignore_keys=list(), only_model=True):
+    def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
         sd = torch.load(path, map_location="cpu")
         if "state_dict" in list(sd.keys()):
             sd = sd["state_dict"]
@@ -1551,13 +1558,29 @@ class LatentFinetuneDiffusion(LatentDiffusion):
                 new_entry[:, :self.keep_dims, ...] = sd[k]
                 sd[k] = new_entry
 
-        missing, unexpected = self.load_state_dict(sd, strict=False) if not only_model else self.model.load_state_dict(
-            sd, strict=False)
-        print(f"Restored from {path} with {len(missing)} missing and {len(unexpected)} unexpected keys")
-        if len(missing) > 0:
-            print(f"Missing Keys: {missing}")
-        if len(unexpected) > 0:
-            print(f"Unexpected Keys: {unexpected}")
+        if only_model:
+            missing, unexpected = self.model.load_state_dict({k[len("model."):]: v for k, v in sd.items() if k.startswith("model")}, strict=False)
+            print(f"Restored from {path} with {len(missing)} missing and {len(unexpected)} unexpected keys")
+            if len(missing) > 0:
+                print(f"Missing Keys: {missing}")
+            if len(unexpected) > 0:
+                print(f"Unexpected Keys: {unexpected}")
+
+            missing, unexpected = self.first_stage_model.load_state_dict({k[len("first_stage_model."):]: v for k, v in sd.items() if k.startswith("first_stage_model")}, strict=False)
+            print(f"Restored FS from {path} with {len(missing)} missing and {len(unexpected)} unexpected keys")
+            if len(missing) > 0:
+                print(f"Missing FS Keys: {missing}")
+            if len(unexpected) > 0:
+                print(f"Unexpected FS Keys: {unexpected}")
+
+        else:
+            missing, unexpected = self.load_state_dict(sd, strict=False)
+            print(f"Restored from {path} with {len(missing)} missing and {len(unexpected)} unexpected keys")
+            if len(missing) > 0:
+                print(f"Missing Keys: {missing}")
+            if len(unexpected) > 0:
+                print(f"Unexpected Keys: {unexpected}")
+
 
     @torch.no_grad()
     def log_images(self, batch, N=8, n_row=4, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,
@@ -1709,8 +1732,8 @@ class LatentDepth2ImageDiffusion(LatentFinetuneDiffusion):
                                               force_c_encode=True, return_original_cond=True, bs=bs)
 
         c_cat = self.get_cat_conditioning(batch, z.shape[2:])
-        all_conds = {"c_concat": [c_cat], "c_crossattn": [rearrange(c_cat, 'b c h w -> b (h w) c')]}
-        # all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
+        # all_conds = {"c_concat": [c_cat], "c_crossattn": [rearrange(c_cat, 'b c h w -> b (h w) c')]}
+        all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
         if return_first_stage_outputs:
             return z, all_conds, x, xrec, xc
         return z, all_conds

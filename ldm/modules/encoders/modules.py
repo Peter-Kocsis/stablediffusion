@@ -289,7 +289,7 @@ class FrozenOpenCLIPImageEmbedder(AbstractEncoder):
     def encode_with_vision_transformer(self, img):
         img = self.preprocess(img)
         x = self.model.visual(img)
-        return x
+        return x.to(torch.float).unsqueeze(1)
 
     def encode(self, text):
         return self(text)
