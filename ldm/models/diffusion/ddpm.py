@@ -1528,7 +1528,7 @@ class LatentFinetuneDiffusion(LatentDiffusion):
         if exists(ckpt_path):
             self.init_from_ckpt(ckpt_path, ignore_keys)
 
-    def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
+    def init_from_ckpt(self, path, ignore_keys=list(), only_model=True):
         sd = torch.load(path, map_location="cpu")
         if "state_dict" in list(sd.keys()):
             sd = sd["state_dict"]
