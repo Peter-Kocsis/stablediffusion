@@ -1911,6 +1911,31 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
         # cc = 2. * (cc - cc_min) / (cc_max - cc_min + 0.001) - 1.
         return cc
 
+    def configure_optimizers(self):
+        lr = self.learning_rate
+        params = list(self.model.parameters())
+        if self.cond_stage_trainable:
+            print(f"{self.__class__.__name__}: Also optimizing conditioner params!")
+            params = params + list(self.cond_stage_model.parameters())
+        if self.learn_logvar:
+            print('Diffusion model optimizing logvar')
+            params.append(self.logvar)
+        params = params + list(self.concat_encoder.parameters())
+        opt = torch.optim.AdamW(params, lr=lr)
+        if self.use_scheduler:
+            assert 'target' in self.scheduler_config
+            scheduler = instantiate_from_config(self.scheduler_config)
+
+            print("Setting up LambdaLR scheduler...")
+            scheduler = [
+                {
+                    'scheduler': LambdaLR(opt, lr_lambda=scheduler.schedule),
+                    'interval': 'step',
+                    'frequency': 1
+                }]
+            return [opt], scheduler
+        return opt
+
     # @torch.no_grad()
     # def log_images(self, *args, **kwargs):
     #     log = super().log_images(*args, **kwargs)
