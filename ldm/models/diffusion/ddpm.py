@@ -1878,7 +1878,6 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
         self.concat_encoder = instantiate_from_config(concat_encoding_stage_config)
         # self.depth_stage_key = concat_keys[0]
 
-    @torch.no_grad()
     def get_input(self, batch, k, cond_key=None, bs=None, return_first_stage_outputs=False):
         # note: restricted to non-trainable encoders currently
         assert not self.cond_stage_trainable, 'trainable cond stages not yet supported for depth2img'
@@ -1891,7 +1890,6 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
             return z, all_conds, x, xrec, xc
         return z, all_conds
 
-    @torch.no_grad()
     def get_cat_conditioning(self, batch, shape):
         assert exists(self.concat_keys)
         # assert len(self.concat_keys) == 1
@@ -1904,7 +1902,6 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
         c_cat = self.get_encoded_conditioning(c_cat)
         return c_cat
 
-    @torch.no_grad()
     def get_encoded_conditioning(self, cc):
         cc = self.concat_encoder(cc)
         # cc_min, cc_max = torch.amin(cc, dim=[1, 2, 3], keepdim=True), torch.amax(cc, dim=[1, 2, 3], keepdim=True)
