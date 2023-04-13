@@ -1868,6 +1868,59 @@ class LatentDepth2ImageDiffusion(LatentFinetuneDiffusion):
         return log
 
 
+class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
+    """
+    condition on monocular depth estimation
+    """
+
+    def __init__(self, concat_encoding_stage_config, concat_keys=("midas_in",), *args, **kwargs):
+        super().__init__(concat_keys=concat_keys, *args, **kwargs)
+        self.concat_encoder = instantiate_from_config(concat_encoding_stage_config)
+        # self.depth_stage_key = concat_keys[0]
+
+    @torch.no_grad()
+    def get_input(self, batch, k, cond_key=None, bs=None, return_first_stage_outputs=False):
+        # note: restricted to non-trainable encoders currently
+        assert not self.cond_stage_trainable, 'trainable cond stages not yet supported for depth2img'
+        z, c, x, xrec, xc = super().get_input(batch, self.first_stage_key, return_first_stage_outputs=True,
+                                              force_c_encode=True, return_original_cond=True, bs=bs)
+
+        c_cat = self.get_cat_conditioning(batch, z.shape[2:])
+        all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
+        if return_first_stage_outputs:
+            return z, all_conds, x, xrec, xc
+        return z, all_conds
+
+    @torch.no_grad()
+    def get_cat_conditioning(self, batch, shape):
+        assert exists(self.concat_keys)
+        # assert len(self.concat_keys) == 1
+        c_cat = list()
+        for ck in self.concat_keys:
+            cc = batch[ck]
+            cc = rearrange(cc, 'b h w c -> b c h w')
+            c_cat.append(cc)
+        c_cat = torch.cat(c_cat, dim=1)
+        c_cat = self.get_encoded_conditioning(c_cat)
+        return c_cat
+
+    @torch.no_grad()
+    def get_encoded_conditioning(self, cc):
+        cc = self.concat_encoder(cc)
+        # cc_min, cc_max = torch.amin(cc, dim=[1, 2, 3], keepdim=True), torch.amax(cc, dim=[1, 2, 3], keepdim=True)
+        # cc = 2. * (cc - cc_min) / (cc_max - cc_min + 0.001) - 1.
+        return cc
+
+    # @torch.no_grad()
+    # def log_images(self, *args, **kwargs):
+    #     log = super().log_images(*args, **kwargs)
+    #     depth = self.depth_model(args[0][self.depth_stage_key])
+    #     depth_min, depth_max = torch.amin(depth, dim=[1, 2, 3], keepdim=True), \
+    #                            torch.amax(depth, dim=[1, 2, 3], keepdim=True)
+    #     log["depth"] = 2. * (depth - depth_min) / (depth_max - depth_min) - 1.
+    #     return log
+
+
 class LatentUpscaleFinetuneDiffusion(LatentFinetuneDiffusion):
     """
         condition on low-res image (and optionally on some spatial noise augmentation)
