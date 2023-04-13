@@ -1837,6 +1837,7 @@ class LatentDepth2ImageDiffusion(LatentFinetuneDiffusion):
         c_cat = list()
         for ck in self.concat_keys:
             cc = batch[ck]
+            cc = rearrange(cc, 'b h w c -> b c h w')
             cc = self.get_depth_conditioning(cc, shape)
             c_cat.append(cc)
         c_cat = torch.cat(c_cat, dim=1)
