@@ -5,11 +5,15 @@ https://github.com/openai/improved-diffusion/blob/e94489283bb876ac1477d5dd7709bb
 https://github.com/CompVis/taming-transformers
 -- merci
 """
+import warnings
+from collections import OrderedDict
+from typing import Mapping, Any, List
 
 import torch
 import torch.nn as nn
 import numpy as np
 import pytorch_lightning as pl
+from torch.nn.modules.module import _IncompatibleKeys
 from torch.optim.lr_scheduler import LambdaLR
 from einops import rearrange, repeat
 from contextlib import contextmanager, nullcontext
@@ -799,7 +803,7 @@ class LatentDiffusion(DDPM):
                     xc = super().get_input(batch, cond_key).to(self.device)
             else:
                 xc = x
-            if not self.cond_stage_trainable or force_c_encode:
+            if (not self.cond_stage_trainable or force_c_encode) and xc is not None:
                 if isinstance(xc, dict) or isinstance(xc, list):
                     c = self.get_learned_conditioning(xc)
                 else:
@@ -1580,6 +1584,94 @@ class LatentFinetuneDiffusion(LatentDiffusion):
                 print(f"Missing Keys: {missing}")
             if len(unexpected) > 0:
                 print(f"Unexpected Keys: {unexpected}")
+
+    def load_state_dict(self, state_dict: Mapping[str, Any],
+                        strict: bool = True):
+        r"""Copies parameters and buffers from :attr:`state_dict` into
+        this module and its descendants. If :attr:`strict` is ``True``, then
+        the keys of :attr:`state_dict` must exactly match the keys returned
+        by this module's :meth:`~torch.nn.Module.state_dict` function.
+
+        Args:
+            state_dict (dict): a dict containing parameters and
+                persistent buffers.
+            strict (bool, optional): whether to strictly enforce that the keys
+                in :attr:`state_dict` match the keys returned by this module's
+                :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
+
+        Returns:
+            ``NamedTuple`` with ``missing_keys`` and ``unexpected_keys`` fields:
+                * **missing_keys** is a list of str containing the missing keys
+                * **unexpected_keys** is a list of str containing the unexpected keys
+
+        Note:
+            If a parameter or buffer is registered as ``None`` and its corresponding key
+            exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
+            ``RuntimeError``.
+        """
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("Expected state_dict to be dict-like, got {}.".format(type(state_dict)))
+
+        missing_keys: List[str] = []
+        unexpected_keys: List[str] = []
+        error_msgs: List[str] = []
+
+        # copy state_dict so _load_from_state_dict can modify it
+        metadata = getattr(state_dict, '_metadata', None)
+        state_dict = OrderedDict(state_dict)
+        if metadata is not None:
+            # mypy isn't aware that "_metadata" exists in state_dict
+            state_dict._metadata = metadata  # type: ignore[attr-defined]
+
+        def load(module, local_state_dict, prefix=''):
+            local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
+            # Try to load, but keep if no success!
+            try:
+                module._load_from_state_dict(
+                    local_state_dict, prefix, local_metadata, True, missing_keys, unexpected_keys, error_msgs)
+            except RuntimeError as e:
+                if strict:
+                    raise e
+                else:
+                    error_msgs.append(e)
+                    return
+            for name, child in module._modules.items():
+                if child is not None:
+                    child_prefix = prefix + name + '.'
+                    child_state_dict = {k: v for k, v in local_state_dict.items() if k.startswith(child_prefix)}
+                    load(child, child_state_dict, child_prefix)
+
+            # Note that the hook can modify missing_keys and unexpected_keys.
+            incompatible_keys = _IncompatibleKeys(missing_keys, unexpected_keys)
+            for hook in module._load_state_dict_post_hooks.values():
+                out = hook(module, incompatible_keys)
+                assert out is None, (
+                    "Hooks registered with ``register_load_state_dict_post_hook`` are not"
+                    "expected to return new values, if incompatible_keys need to be modified,"
+                    "it should be done inplace."
+                )
+
+        load(self, state_dict)
+        del load
+
+        if strict:
+            if len(unexpected_keys) > 0:
+                error_msgs.insert(
+                    0, 'Unexpected key(s) in state_dict: {}. '.format(
+                        ', '.join('"{}"'.format(k) for k in unexpected_keys)))
+            if len(missing_keys) > 0:
+                error_msgs.insert(
+                    0, 'Missing key(s) in state_dict: {}. '.format(
+                        ', '.join('"{}"'.format(k) for k in missing_keys)))
+
+        if len(error_msgs) > 0:
+            if strict:
+                raise RuntimeError('Error(s) in loading state_dict for {}:\n\t{}'.format(
+                                   self.__class__.__name__, "\n\t".join(error_msgs)))
+            else:
+                warnings.warn('Error(s) in loading state_dict for {}:\n\t{}'.format(
+                              self.__class__.__name__, "\n\t".join(error_msgs)))
+        return _IncompatibleKeys(missing_keys, unexpected_keys)
 
 
     @torch.no_grad()
