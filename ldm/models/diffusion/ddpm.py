@@ -1104,7 +1104,8 @@ class LatentDiffusion(DDPM):
                verbose=True, timesteps=None, quantize_denoised=False,
                mask=None, x0=None, shape=None, **kwargs):
         if shape is None:
-            shape = (batch_size, self.channels, self.image_size, self.image_size)
+            image_size = self.image_size if hasattr(self.image_size, "__getitem__") else [self.image_size, self.image_size]
+            shape = (batch_size, self.channels, image_size[0], image_size[1])
         if cond is not None:
             if isinstance(cond, dict):
                 cond = {key: cond[key][:batch_size] if not isinstance(cond[key], list) else
