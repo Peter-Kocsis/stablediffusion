@@ -1882,8 +1882,24 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
     def get_input(self, batch, k, cond_key=None, bs=None, return_first_stage_outputs=False):
         # note: restricted to non-trainable encoders currently
         assert not self.cond_stage_trainable, 'trainable cond stages not yet supported for depth2img'
-        z, c, x, xrec, xc = super().get_input(batch, self.first_stage_key, return_first_stage_outputs=True,
-                                              force_c_encode=True, return_original_cond=True, bs=bs)
+        if isinstance(self.first_stage_key, ListConfig):
+            z, c, x, xrec, xc = [], [], [], [], []
+            for first_stage_key in self.first_stage_key:
+                z_key, c_key, x_key, xrec_key, xc_key = super().get_input(batch, first_stage_key, return_first_stage_outputs=True,
+                                                      force_c_encode=True, return_original_cond=True, bs=bs)
+                z.append(z_key)
+                c.append(c_key)
+                x.append(x_key)
+                xrec.append(xrec_key)
+                xc.append(xc_key)
+            z = torch.cat(z, dim=1)
+            c = torch.cat(c, dim=1)
+            x = torch.cat(x, dim=1)
+            xrec = torch.cat(xrec, dim=1)
+            xc = torch.cat(xc, dim=1)
+        else:
+            z, c, x, xrec, xc = super().get_input(batch, self.first_stage_key, return_first_stage_outputs=True,
+                                                  force_c_encode=True, return_original_cond=True, bs=bs)
 
         c_cat = self.get_cat_conditioning(batch, z.shape[2:])
         all_conds = {"c_concat": [c_cat], "c_crossattn": [c]}
