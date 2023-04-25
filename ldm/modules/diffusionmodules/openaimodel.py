@@ -798,6 +798,11 @@ class UNetModel(nn.Module):
             hs.append(h)
         h = self.middle_block(h, emb, context)
         for module in self.output_blocks:
+            # Drop the last features if the shape is incorrect
+            if hs[-1].shape[2] != h.shape[2]:
+                h = h[:, :, :-1, :]
+            if hs[-1].shape[3] != h.shape[3]:
+                h = h[:, :, :, :-1]
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context)
         h = h.type(x.dtype)
