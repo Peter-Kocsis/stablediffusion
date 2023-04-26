@@ -22,7 +22,7 @@ import itertools
 from tqdm import tqdm
 from torchvision.utils import make_grid
 from pytorch_lightning.utilities.distributed import rank_zero_only
-from omegaconf import ListConfig
+from omegaconf import ListConfig, DictConfig
 
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from ldm.modules.ema import LitEma
@@ -1876,8 +1876,20 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
 
     def __init__(self, concat_encoding_stage_config, concat_keys=("midas_in",), *args, **kwargs):
         super().__init__(concat_keys=concat_keys, *args, **kwargs)
-        self.concat_encoder = instantiate_from_config(concat_encoding_stage_config)
+        self.concat_encoding_stage_config = concat_encoding_stage_config
+        self.concat_encoder = self.get_concat_encoder(concat_encoding_stage_config)
         # self.depth_stage_key = concat_keys[0]
+
+    def get_concat_encoder(self, config):
+        if not hasattr(config, "target") and config != "__is_first_stage__":
+            return nn.ModuleDict(OrderedDict([(k, self.get_concat_encoder(v)) for k, v in config.items()]))
+
+        if config == "__is_first_stage__":
+            print("Using first stage also as ocncat stage.")
+            return self.first_stage_model
+        else:
+            model = instantiate_from_config(config)
+            return model
 
     def get_input(self, batch, k, cond_key=None, bs=None, return_first_stage_outputs=False):
         # note: restricted to non-trainable encoders currently
@@ -1910,17 +1922,29 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
     def get_cat_conditioning(self, batch, shape):
         assert exists(self.concat_keys)
         # assert len(self.concat_keys) == 1
-        c_cat = list()
+        c_cat = dict()
         for ck in self.concat_keys:
             cc = batch[ck]
             cc = rearrange(cc, 'b h w c -> b c h w')
-            c_cat.append(cc)
-        c_cat = torch.cat(c_cat, dim=1)
+            c_cat[ck] = cc
         c_cat = self.get_encoded_conditioning(c_cat)
         return c_cat
 
-    def get_encoded_conditioning(self, cc):
-        cc = self.concat_encoder(cc)
+    def get_encoded_conditioning(self, cc, encoder=None):
+        if encoder is None:
+            encoder = self.concat_encoder
+
+        if isinstance(encoder, nn.ModuleDict):
+            cc = [self.get_encoded_conditioning(v, encoder=encoder[k]) for k, v in cc.items()]
+            cc = torch.cat(cc, dim=1)
+        else:
+            if isinstance(cc, dict):
+                cc = torch.cat(list(cc.values()), dim=1)
+
+            if isinstance(encoder, AutoencoderKL):
+                cc = self.get_first_stage_encoding(encoder.encode(cc))
+            else:
+                cc = encoder(cc)
         # cc_min, cc_max = torch.amin(cc, dim=[1, 2, 3], keepdim=True), torch.amax(cc, dim=[1, 2, 3], keepdim=True)
         # cc = 2. * (cc - cc_min) / (cc_max - cc_min + 0.001) - 1.
         return cc
