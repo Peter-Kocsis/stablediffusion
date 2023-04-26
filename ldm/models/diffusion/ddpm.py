@@ -1942,6 +1942,8 @@ class LatentImages2ImageDiffusion(LatentFinetuneDiffusion):
                 cc = torch.cat(list(cc.values()), dim=1)
 
             if isinstance(encoder, AutoencoderKL):
+                if cc.shape[1] == 1:
+                    cc = cc.expand(-1, 3, -1, -1)
                 cc = self.get_first_stage_encoding(encoder.encode(cc))
             else:
                 cc = encoder(cc)
