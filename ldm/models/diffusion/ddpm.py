@@ -1610,9 +1610,6 @@ class LatentFinetuneDiffusion(LatentDiffusion):
             exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
             ``RuntimeError``.
         """
-        warnings.warn("Setting strict loading to false!")
-        strict = False
-
         if not isinstance(state_dict, Mapping):
             raise TypeError("Expected state_dict to be dict-like, got {}.".format(type(state_dict)))
 
