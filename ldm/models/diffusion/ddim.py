@@ -56,7 +56,7 @@ class DDIMSampler(object):
     def sample(self,
                S,
                batch_size,
-               shape,
+               shape=None,
                conditioning=None,
                callback=None,
                normals_sequence=None,
@@ -78,6 +78,10 @@ class DDIMSampler(object):
                ucg_schedule=None,
                **kwargs
                ):
+        if shape is None:
+            image_size = self.model.image_size if hasattr(self.model.image_size, "__getitem__") \
+                else [self.model.image_size,  self.model.image_size]
+            shape = (self.model.channels, image_size[0], image_size[1])
         if conditioning is not None:
             if isinstance(conditioning, dict):
                 ctmp = conditioning[list(conditioning.keys())[0]]
@@ -89,7 +93,7 @@ class DDIMSampler(object):
             elif isinstance(conditioning, list):
                 for ctmp in conditioning:
                     if ctmp.shape[0] != batch_size:
-                        print(f"Warning: Got {cbs} conditionings but batch-size is {batch_size}")
+                        print(f"Warning: Got {ctmp.shape[0]} conditionings but batch-size is {batch_size}")
 
             else:
                 if conditioning.shape[0] != batch_size:
