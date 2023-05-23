@@ -191,7 +191,8 @@ class DDPM(pl.LightningModule):
                     2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod)))
         else:
             raise NotImplementedError("mu not supported")
-        lvlb_weights[0] = lvlb_weights[1]
+        if len(lvlb_weights) > 1:
+            lvlb_weights[0] = lvlb_weights[1]
         self.register_buffer('lvlb_weights', lvlb_weights, persistent=False)
         assert not torch.isnan(self.lvlb_weights).all()
 
@@ -1326,14 +1327,20 @@ class DiffusionWrapper(pl.LightningModule):
         super().__init__()
         if isinstance(diff_model_config, dict):
             self.sequential_cross_attn = diff_model_config.pop("sequential_crossattn", False)
+            self.zero_noise = diff_model_config.pop("zero_noise", False)
             self.diffusion_model = instantiate_from_config(diff_model_config)
         else:
             self.sequential_cross_attn = getattr(diff_model_config, "sequential_crossattn", False)
+            self.zero_noise = getattr(diff_model_config, "zero_noise", False)
             self.diffusion_model = diff_model_config
         self.conditioning_key = conditioning_key
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm', 'hybrid-adm', 'crossattn-adm']
 
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None, c_adm=None):
+        if self.zero_noise:
+            x = x * 0.
+            assert torch.all(t == 0.), "If zero_noise is True, t must be 0."
+
         if self.conditioning_key is None:
             out = self.diffusion_model(x, t)
         elif self.conditioning_key == 'concat':
