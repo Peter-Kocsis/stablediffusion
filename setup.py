@@ -6,8 +6,5 @@ setup(
     description='',
     packages=find_packages(),
     install_requires=[
-        'torch',
-        'numpy',
-        'tqdm',
     ],
 )
